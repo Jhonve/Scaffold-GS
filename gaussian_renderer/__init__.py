@@ -26,7 +26,10 @@ def generate_neural_gaussians(viewpoint_camera, pc : GaussianModel, visible_mask
     grid_scaling = pc.get_scaling[visible_mask]
 
     ## get view properties for anchor
-    ob_view = anchor - viewpoint_camera.camera_center
+    if viewpoint_camera is not None:
+        ob_view = anchor - viewpoint_camera.camera_center
+    else:
+        ob_view = anchor
     # dist
     ob_dist = ob_view.norm(dim=1, keepdim=True)
     # view
@@ -48,7 +51,7 @@ def generate_neural_gaussians(viewpoint_camera, pc : GaussianModel, visible_mask
 
     cat_local_view = torch.cat([feat, ob_view, ob_dist], dim=1) # [N, c+3+1]
     cat_local_view_wodist = torch.cat([feat, ob_view], dim=1) # [N, c+3]
-    if pc.appearance_dim > 0:
+    if pc.appearance_dim > 0 and viewpoint_camera is not None:
         camera_indicies = torch.ones_like(cat_local_view[:,0], dtype=torch.long, device=ob_dist.device) * viewpoint_camera.uid
         # camera_indicies = torch.ones_like(cat_local_view[:,0], dtype=torch.long, device=ob_dist.device) * 10
         appearance = pc.get_appearance(camera_indicies)
@@ -182,6 +185,52 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
                 "radii": radii,
                 }
 
+def convert_and_save(pc : GaussianModel, path, visible_mask=None):
+    xyz, color, opacity, scaling, rot = generate_neural_gaussians(None, pc, visible_mask, is_training=False)
+    pc.regular_save_ply(xyz=xyz, color=color, opacities=opacity, scaling=scaling, rotation=rot, path=path)
+
+def convert_and_render(view_cam, pc : GaussianModel, pipe, bg_color : torch.Tensor, visible_mask=None, scaling_modifier=1.0):
+    xyz, color, opacity, scaling, rot = generate_neural_gaussians(view_cam, pc, visible_mask, is_training=False)
+    # pc.regular_save_ply(xyz=xyz, color=color, opacities=opacity, scaling=scaling, rotation=rot, path=path)# Create zero tensor. We will use it to make pytorch return gradients of the 2D (screen-space) means
+    screenspace_points = torch.zeros_like(xyz, dtype=pc.get_anchor.dtype, requires_grad=True, device="cuda") + 0
+
+    # Set up rasterization configuration
+    tanfovx = math.tan(view_cam.FoVx * 0.5)
+    tanfovy = math.tan(view_cam.FoVy * 0.5)
+
+    raster_settings = GaussianRasterizationSettings(
+        image_height=int(view_cam.image_height),
+        image_width=int(view_cam.image_width),
+        tanfovx=tanfovx,
+        tanfovy=tanfovy,
+        bg=bg_color,
+        scale_modifier=scaling_modifier,
+        viewmatrix=view_cam.world_view_transform,
+        projmatrix=view_cam.full_proj_transform,
+        sh_degree=1,
+        campos=view_cam.camera_center,
+        prefiltered=False,
+        debug=pipe.debug
+    )
+
+    rasterizer = GaussianRasterizer(raster_settings=raster_settings)
+    
+    # Rasterize visible Gaussians to image, obtain their radii (on screen). 
+    rendered_image, radii = rasterizer(
+        means3D = xyz,
+        means2D = screenspace_points,
+        shs = None,
+        colors_precomp = color,
+        opacities = opacity,
+        scales = scaling,
+        rotations = rot,
+        cov3D_precomp = None)
+    
+    # Those Gaussians that were frustum culled or had a radius of 0 were not visible.
+    return {"render": rendered_image,
+            "viewspace_points": screenspace_points,
+            "visibility_filter" : radii > 0,
+            "radii": radii}
 
 def prefilter_voxel(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, scaling_modifier = 1.0, override_color = None):
     """

@@ -23,7 +23,7 @@ os.system('echo $CUDA_VISIBLE_DEVICES')
 from scene import Scene
 import json
 import time
-from gaussian_renderer import render, prefilter_voxel
+from gaussian_renderer import render, prefilter_voxel, convert_and_save, convert_and_render
 import torchvision
 from tqdm import tqdm
 from utils.general_utils import safe_state
@@ -69,7 +69,10 @@ def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParam
     with torch.no_grad():
         gaussians = GaussianModel(dataset.feat_dim, dataset.n_offsets, dataset.voxel_size, dataset.update_depth, dataset.update_init_factor, dataset.update_hierachy_factor, dataset.use_feat_bank, 
                               dataset.appearance_dim, dataset.ratio, dataset.add_opacity_dist, dataset.add_cov_dist, dataset.add_color_dist)
-        scene = Scene(dataset, gaussians, load_iteration=iteration, shuffle=False)
+        if hasattr(dataset, "ckpt_mode"):
+            scene = Scene(dataset, gaussians, load_iteration=iteration, shuffle=False, ckpt_mode=dataset.ckpt_mode)
+        else:
+            scene = Scene(dataset, gaussians, load_iteration=iteration, shuffle=False)
         
         gaussians.eval()
 
@@ -84,6 +87,35 @@ def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParam
         if not skip_test:
              render_set(dataset.model_path, "test", scene.loaded_iter, scene.getTestCameras(), gaussians, pipeline, background)
 
+def convert2regular(dataset : ModelParams, iteration : int, pipeline : PipelineParams, is_render=False):
+    with torch.no_grad():
+        gaussians = GaussianModel(dataset.feat_dim, dataset.n_offsets, dataset.voxel_size, dataset.update_depth, dataset.update_init_factor, dataset.update_hierachy_factor, dataset.use_feat_bank, 
+                              dataset.appearance_dim, dataset.ratio, dataset.add_opacity_dist, dataset.add_cov_dist, dataset.add_color_dist)
+        if hasattr(dataset, "ckpt_mode"):
+            scene = Scene(dataset, gaussians, load_iteration=iteration, shuffle=False, ckpt_mode=dataset.ckpt_mode)
+        else:
+            scene = Scene(dataset, gaussians, load_iteration=iteration, shuffle=False)
+        
+        gaussians.eval()
+
+        bg_color = [1,1,1] if dataset.white_background else [0, 0, 0]
+        background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
+        if not os.path.exists(dataset.model_path):
+            os.makedirs(dataset.model_path)
+        render_path = os.path.join(dataset.model_path, "regular_render", "regular_{}".format(iteration), "renders")
+        if not os.path.exists(render_path):
+            os.makedirs(render_path)
+
+        voxel_mask = None
+
+        if is_render:
+            views = scene.getTrainCameras()
+            for idx, view in enumerate(tqdm(views, desc="Rendering progress")):
+                render_pkg = convert_and_render(view, gaussians, pipeline, background, visible_mask=voxel_mask)
+                rendering = render_pkg["render"]
+                torchvision.utils.save_image(rendering, os.path.join(render_path, '{0:05d}'.format(idx) + ".png"))
+        convert_and_save(gaussians, path=os.path.join(dataset.model_path, 'regular_gs.ply'), visible_mask=voxel_mask)
+
 if __name__ == "__main__":
     # Set up command line argument parser
     parser = ArgumentParser(description="Testing script parameters")
@@ -93,10 +125,15 @@ if __name__ == "__main__":
     parser.add_argument("--skip_train", action="store_true")
     parser.add_argument("--skip_test", action="store_true")
     parser.add_argument("--quiet", action="store_true")
+    parser.add_argument("--convert", action="store_true")
     args = get_combined_args(parser)
     print("Rendering " + args.model_path)
 
     # Initialize system state (RNG)
     safe_state(args.quiet)
+
+    if args.convert:
+        print("Converting to regular 3D Gaussians")
+        convert2regular(model.extract(args), args.iteration, pipeline.extract(args))
 
     render_sets(model.extract(args), args.iteration, pipeline.extract(args), args.skip_train, args.skip_test)

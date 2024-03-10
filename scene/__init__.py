@@ -22,13 +22,14 @@ class Scene:
 
     gaussians : GaussianModel
 
-    def __init__(self, args : ModelParams, gaussians : GaussianModel, load_iteration=None, shuffle=True, resolution_scales=[1.0], ply_path=None):
+    def __init__(self, args : ModelParams, gaussians : GaussianModel, load_iteration=None, shuffle=True, resolution_scales=[1.0], ply_path=None, ckpt_mode='split'):
         """b
         :param path: Path to colmap scene main folder.
         """
         self.model_path = args.model_path
         self.loaded_iter = None
         self.gaussians = gaussians
+        self.ckpt_mode = ckpt_mode if ckpt_mode == "split" or ckpt_mode == "unite" else "split"
 
         if load_iteration:
             if load_iteration == -1:
@@ -90,14 +91,14 @@ class Scene:
                                                            "point_cloud.ply"))
             self.gaussians.load_mlp_checkpoints(os.path.join(self.model_path,
                                                            "point_cloud",
-                                                           "iteration_" + str(self.loaded_iter)))
+                                                           "iteration_" + str(self.loaded_iter)), mode=self.ckpt_mode)
         else:
             self.gaussians.create_from_pcd(scene_info.point_cloud, self.cameras_extent)
 
     def save(self, iteration):
         point_cloud_path = os.path.join(self.model_path, "point_cloud/iteration_{}".format(iteration))
         self.gaussians.save_ply(os.path.join(point_cloud_path, "point_cloud.ply"))
-        self.gaussians.save_mlp_checkpoints(point_cloud_path)
+        self.gaussians.save_mlp_checkpoints(point_cloud_path, mode=self.ckpt_mode)
 
     def getTrainCameras(self, scale=1.0):
         return self.train_cameras[scale]

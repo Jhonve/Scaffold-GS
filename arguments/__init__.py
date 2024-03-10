@@ -75,6 +75,9 @@ class ModelParams(ParamGroup):
         self.add_opacity_dist = False
         self.add_cov_dist = False
         self.add_color_dist = False
+
+        # For scaffold series
+        self.ckpt_mode = ""
         
         super().__init__(parser, "Loading Parameters", sentinel)
 

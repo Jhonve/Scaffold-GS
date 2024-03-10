@@ -400,6 +400,20 @@ class GaussianModel:
             l.append('rot_{}'.format(i))
         return l
 
+    def regular_construct_list_of_attributes(self, features_dc, features_rest, scaling):
+        l = ['x', 'y', 'z', 'nx', 'ny', 'nz']
+        # All channels except the 3 DC
+        for i in range(features_dc.shape[1]*features_dc.shape[2]):
+            l.append('f_dc_{}'.format(i))
+        for i in range(features_rest.shape[1]*features_rest.shape[2]):
+            l.append('f_rest_{}'.format(i))
+        l.append('opacity')
+        for i in range(scaling.shape[1]):
+            l.append('scale_{}'.format(i))
+        for i in range(self._rotation.shape[1]):
+            l.append('rot_{}'.format(i))
+        return l
+
     def save_ply(self, path):
         mkdir_p(os.path.dirname(path))
 
@@ -415,6 +429,28 @@ class GaussianModel:
 
         elements = np.empty(anchor.shape[0], dtype=dtype_full)
         attributes = np.concatenate((anchor, normals, offset, anchor_feat, opacities, scale, rotation), axis=1)
+        elements[:] = list(map(tuple, attributes))
+        el = PlyElement.describe(elements, 'vertex')
+        PlyData([el]).write(path)
+
+    def regular_save_ply(self, xyz, color, opacities, scaling, rotation, path):
+        mkdir_p(os.path.dirname(path))
+
+        xyz = xyz.detach().cpu().numpy()
+        normals = np.zeros_like(xyz)
+        sh_degree = 3
+        features_dc = color[:, None, :].float()
+        features_rest = torch.zeros((xyz.shape[0], (sh_degree + 1) ** 2 - 1, 3), dtype=torch.float)
+        f_dc = features_dc.detach().transpose(1, 2).flatten(start_dim=1).contiguous().cpu().numpy()
+        f_rest = features_rest.detach().transpose(1, 2).flatten(start_dim=1).contiguous().cpu().numpy()
+        opacities = opacities.detach().cpu().numpy()
+        scale = scaling.detach().cpu().numpy()
+        rotation = rotation.detach().cpu().numpy()
+
+        dtype_full = [(attribute, 'f4') for attribute in self.regular_construct_list_of_attributes(features_dc, features_rest, scale)]
+
+        elements = np.empty(xyz.shape[0], dtype=dtype_full)
+        attributes = np.concatenate((xyz, normals, f_dc, f_rest, opacities, scale, rotation), axis=1)
         elements[:] = list(map(tuple, attributes))
         el = PlyElement.describe(elements, 'vertex')
         PlyData([el]).write(path)
