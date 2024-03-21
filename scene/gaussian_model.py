@@ -461,6 +461,8 @@ class GaussianModel:
         anchor = np.stack((np.asarray(plydata.elements[0]["x"]),
                         np.asarray(plydata.elements[0]["y"]),
                         np.asarray(plydata.elements[0]["z"])),  axis=1).astype(np.float32)
+        # anchor = anchor - np.array([[0.0886, -2.4495, -3.4980]], dtype=np.float32)  # TODO Hardcoded offset for vasedeck case
+        # anchor = anchor - np.array([[0.6749, -0.0551, -0.6837]], dtype=np.float32)  # TODO Hardcoded offset for barn case
         opacities = np.asarray(plydata.elements[0]["opacity"])[..., np.newaxis].astype(np.float32)
 
         scale_names = [p.name for p in plydata.elements[0].properties if p.name.startswith("scale_")]

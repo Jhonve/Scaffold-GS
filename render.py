@@ -108,13 +108,14 @@ def convert2regular(dataset : ModelParams, iteration : int, pipeline : PipelineP
 
         voxel_mask = None
 
+        views = scene.getTrainCameras()
         if is_render:
-            views = scene.getTrainCameras()
             for idx, view in enumerate(tqdm(views, desc="Rendering progress")):
                 render_pkg = convert_and_render(view, gaussians, pipeline, background, visible_mask=voxel_mask)
                 rendering = render_pkg["render"]
                 torchvision.utils.save_image(rendering, os.path.join(render_path, '{0:05d}'.format(idx) + ".png"))
-        convert_and_save(gaussians, path=os.path.join(dataset.model_path, 'regular_gs.ply'), visible_mask=voxel_mask)
+        # convert_and_save(None, pc=gaussians, path=os.path.join(dataset.model_path, 'regular_gs.ply'), visible_mask=voxel_mask)
+        convert_and_save(views[0], pc=gaussians, path=os.path.join(dataset.model_path, 'regular_gs.ply'), visible_mask=voxel_mask)  # view-specific, 126 for barn
 
 if __name__ == "__main__":
     # Set up command line argument parser

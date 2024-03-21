@@ -185,8 +185,8 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
                 "radii": radii,
                 }
 
-def convert_and_save(pc : GaussianModel, path, visible_mask=None):
-    xyz, color, opacity, scaling, rot = generate_neural_gaussians(None, pc, visible_mask, is_training=False)
+def convert_and_save(view_cam, pc : GaussianModel, path, visible_mask=None):
+    xyz, color, opacity, scaling, rot = generate_neural_gaussians(view_cam, pc, visible_mask, is_training=False)
     pc.regular_save_ply(xyz=xyz, color=color, opacities=opacity, scaling=scaling, rotation=rot, path=path)
 
 def convert_and_render(view_cam, pc : GaussianModel, pipe, bg_color : torch.Tensor, visible_mask=None, scaling_modifier=1.0):
